@@ -1,10 +1,12 @@
 pub mod camera;
+pub mod loader;
 pub mod vertex;
 
 use crate::{camera::*, vertex::*};
 
 use std::iter;
 
+use loader::{load, MeshData};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -17,6 +19,12 @@ use nalgebra::{Point3, Vector3};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+struct Mesh {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+}
 
 // We need this for Rust to store our data correctly for the shaders
 #[repr(C)]
@@ -50,9 +58,7 @@ struct State {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
+    meshes: Vec<Mesh>,
     camera: Camera,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -211,19 +217,12 @@ impl State {
             multiview: None,
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let cube: MeshData = load("assets/cube.gltf").expect("failed to load cube!");
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let num_indices = INDICES.len() as u32;
+        let meshes: Vec<Mesh> = vec![
+            create_mesh(&device, VERTICES, INDICES), // triangle
+            create_mesh(&device, cube.vertices.as_slice(), cube.indices.as_slice()),
+        ];
 
         Self {
             surface,
@@ -232,9 +231,7 @@ impl State {
             config,
             size,
             pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
+            meshes,
             camera,
             uniform_buffer,
             uniform_bind_group,
@@ -313,15 +310,41 @@ impl State {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+
+            for mesh in self.meshes.iter() {
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+            }
         }
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
         Ok(())
+    }
+}
+
+fn create_mesh(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32]) -> Mesh {
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: bytemuck::cast_slice(indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+
+    let index_count = indices.len() as u32;
+
+    Mesh {
+        vertex_buffer,
+        index_buffer,
+        index_count,
     }
 }
 
