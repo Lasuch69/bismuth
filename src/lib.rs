@@ -101,26 +101,6 @@ impl Instance {
     }
 }
 
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [0.0, 0.5, 0.0],
-        color: [1.0, 0.0, 0.0],
-        tex_coords: [0.5, 1.0],
-    },
-    Vertex {
-        position: [-0.5, -0.5, 0.0],
-        color: [0.0, 1.0, 0.0],
-        tex_coords: [0.0, 0.0],
-    },
-    Vertex {
-        position: [0.5, -0.5, 0.0],
-        color: [0.0, 0.0, 1.0],
-        tex_coords: [1.0, 0.0],
-    },
-];
-
-const INDICES: &[u32] = &[0, 1, 2];
-
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -253,7 +233,7 @@ impl State {
         });
 
         let camera = Camera {
-            eye: Vec3::new(0.0, 1.0, 2.0),
+            eye: Vec3::new(1.0, 1.0, 1.0),
             target: Vec3::ZERO,
             up: Vec3::Y,
             fovy: 75.0,
@@ -336,18 +316,15 @@ impl State {
 
         let cube: MeshData = load("assets/cube.gltf").expect("failed to load cube!");
 
-        let meshes: Vec<Mesh> = vec![
-            create_mesh(
-                &device,
-                VERTICES,
-                INDICES,
-                &vec![Instance {
-                    position: Vec3::ZERO,
-                    rotation: Quat::default(),
-                }],
-            ), // triangle
-               //create_mesh(&device, cube.vertices.as_slice(), cube.indices.as_slice()),
-        ];
+        let meshes: Vec<Mesh> = vec![create_mesh(
+            &device,
+            cube.vertices.as_slice(),
+            cube.indices.as_slice(),
+            &vec![Instance {
+                position: Vec3::ZERO,
+                rotation: Quat::default(),
+            }],
+        )];
 
         Self {
             surface,

@@ -1,6 +1,6 @@
-use gltf::Error;
+use gltf::{mesh::util::tex_coords, Error};
 
-use crate::vertex::Vertex;
+use crate::vertex::{self, Vertex};
 
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
@@ -16,12 +16,37 @@ pub fn load(path: &str) -> Result<MeshData, Error> {
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
+            let mut iter_position = reader.read_positions().unwrap();
+            let mut iter_color = reader.read_colors(0).unwrap().into_rgb_f32();
+            let mut iter_uv = reader.read_tex_coords(0).unwrap().into_f32();
+
+            loop {
+                let mut vertex = Vertex::default();
+
+                if let Some(position) = iter_position.next() {
+                    vertex.position = position;
+                } else {
+                    break;
+                }
+
+                if let Some(color) = iter_color.next() {
+                    vertex.color = color;
+                }
+
+                if let Some(uv) = iter_uv.next() {
+                    vertex.tex_coords = uv;
+                }
+
+                vertices.push(vertex);
+            }
             if let Some(iter) = reader.read_positions() {
+                let mut uv = reader.read_tex_coords(0).unwrap().into_f32();
+
                 for position in iter {
                     vertices.push(Vertex {
                         position,
                         color: [1.0, 1.0, 1.0],
-                        tex_coords: [0.0, 0.0],
+                        tex_coords: uv.next().unwrap_or_default(),
                     })
                 }
             }
