@@ -13,6 +13,13 @@ struct VertexInput {
 	@location(2) tex_coords: vec2<f32>
 }
 
+struct InstanceInput {
+    @location(5) x: vec4<f32>,
+    @location(6) y: vec4<f32>,
+    @location(7) z: vec4<f32>,
+    @location(8) w: vec4<f32>,
+};
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
 	@location(0) color: vec3<f32>,
@@ -20,11 +27,13 @@ struct VertexOutput {
 };
 
 @vertex
-fn vertex(in: VertexInput) -> VertexOutput {
+fn vertex(v: VertexInput, i: InstanceInput) -> VertexOutput {
+    let model = mat4x4<f32>(i.x, i.y, i.z, i.w);
+
     var out: VertexOutput;
-    out.position = ubo.view_proj * vec4<f32>(in.position, 1.0);
-    out.color = in.color;
-    out.tex_coords = in.tex_coords;
+    out.position = ubo.view_proj * model * vec4<f32>(v.position, 1.0);
+    out.color = v.color;
+    out.tex_coords = v.tex_coords;
 
     return out;
 }

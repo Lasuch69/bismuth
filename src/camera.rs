@@ -1,27 +1,23 @@
-use nalgebra::{Matrix4, Point3, Vector3};
+use std::f32::consts::PI;
 
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.5,
-    0.0, 0.0, 0.0, 1.0,
-);
+use bevy_math::prelude::*;
 
 pub struct Camera {
-    pub eye: Point3<f32>,
-    pub target: Point3<f32>,
-    pub up: Vector3<f32>,
+    pub eye: Vec3,
+    pub target: Vec3,
+    pub up: Vec3,
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
 }
 
 impl Camera {
-    pub fn get_view_projection_matrix(&self, aspect: f32) -> Matrix4<f32> {
-        let view = Matrix4::look_at_rh(&self.eye, &self.target, &self.up);
-        let proj = Matrix4::new_perspective(aspect, self.fovy, self.znear, self.zfar);
+    pub fn get_view_projection_matrix(&self, aspect: f32) -> Mat4 {
+        let fovy = self.fovy * (PI / 180.0);
 
-        return OPENGL_TO_WGPU_MATRIX * proj * view;
+        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        let proj = Mat4::perspective_rh(fovy, aspect, self.znear, self.zfar);
+
+        return proj * view;
     }
 }

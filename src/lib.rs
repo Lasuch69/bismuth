@@ -16,7 +16,7 @@ use winit::{
 
 use wgpu::util::DeviceExt;
 
-use nalgebra::{Point3, Vector3};
+use bevy_math::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -25,6 +25,9 @@ struct Mesh {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: u32,
+
+    instance_buffer: wgpu::Buffer,
+    instance_count: u32,
 }
 
 // We need this for Rust to store our data correctly for the shaders
@@ -33,6 +36,69 @@ struct Mesh {
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct UniformBufferObject {
     view_proj: [[f32; 4]; 4],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceRaw {
+    model: [[f32; 4]; 4],
+}
+
+impl InstanceRaw {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            // We need to switch from using a step mode of Vertex to Instance
+            // This means that our shaders will only change to use the next
+            // instance when the shader starts processing a new instance
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
+                // for each vec4. We'll have to reassemble the mat4 in the shader.
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials, we'll
+                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5, not conflict with them later
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+struct Instance {
+    position: Vec3,
+    rotation: Quat,
+}
+
+impl Instance {
+    fn to_raw(&self) -> InstanceRaw {
+        InstanceRaw {
+            model: Mat4::from_scale_rotation_translation(
+                Vec3::new(1.0, 1.0, 1.0),
+                self.rotation,
+                self.position,
+            )
+            .to_cols_array_2d(),
+        }
+    }
 }
 
 const VERTICES: &[Vertex] = &[
@@ -187,10 +253,10 @@ impl State {
         });
 
         let camera = Camera {
-            eye: Point3::new(0.0, 1.0, 2.0),
-            target: Point3::new(0.0, 0.0, 0.0),
-            up: Vector3::new(0.0, 1.0, 0.0),
-            fovy: 45.0,
+            eye: Vec3::new(0.0, 1.0, 2.0),
+            target: Vec3::ZERO,
+            up: Vec3::Y,
+            fovy: 75.0,
             znear: 0.1,
             zfar: 100.0,
         };
@@ -239,7 +305,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vertex",
-                buffers: &[Vertex::desc()],
+                buffers: &[Vertex::desc(), InstanceRaw::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -271,8 +337,16 @@ impl State {
         let cube: MeshData = load("assets/cube.gltf").expect("failed to load cube!");
 
         let meshes: Vec<Mesh> = vec![
-            create_mesh(&device, VERTICES, INDICES), // triangle
-                                                     //create_mesh(&device, cube.vertices.as_slice(), cube.indices.as_slice()),
+            create_mesh(
+                &device,
+                VERTICES,
+                INDICES,
+                &vec![Instance {
+                    position: Vec3::ZERO,
+                    rotation: Quat::default(),
+                }],
+            ), // triangle
+               //create_mesh(&device, cube.vertices.as_slice(), cube.indices.as_slice()),
         ];
 
         Self {
@@ -316,7 +390,10 @@ impl State {
         let aspect = self.config.width as f32 / self.config.height as f32;
 
         let ubo = UniformBufferObject {
-            view_proj: self.camera.get_view_projection_matrix(aspect).into(),
+            view_proj: self
+                .camera
+                .get_view_projection_matrix(aspect)
+                .to_cols_array_2d(),
         };
 
         self.queue
@@ -367,9 +444,11 @@ impl State {
 
             for mesh in self.meshes.iter() {
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+
+                render_pass.draw_indexed(0..mesh.index_count, 0, 0..mesh.instance_count as _);
             }
         }
 
@@ -380,7 +459,12 @@ impl State {
     }
 }
 
-fn create_mesh(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32]) -> Mesh {
+fn create_mesh(
+    device: &wgpu::Device,
+    vertices: &[Vertex],
+    indices: &[u32],
+    instances: &Vec<Instance>,
+) -> Mesh {
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Vertex Buffer"),
         contents: bytemuck::cast_slice(vertices),
@@ -395,10 +479,23 @@ fn create_mesh(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32]) -> M
 
     let index_count = indices.len() as u32;
 
+    let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+
+    let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Instance Buffer"),
+        contents: bytemuck::cast_slice(&instance_data),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
+    let instance_count = instances.len() as u32;
+
     Mesh {
         vertex_buffer,
         index_buffer,
         index_count,
+
+        instance_buffer,
+        instance_count,
     }
 }
 
