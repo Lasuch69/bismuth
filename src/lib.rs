@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod loader;
+pub mod texture;
 pub mod vertex;
 
 use crate::{camera::*, vertex::*};
@@ -38,14 +39,17 @@ const VERTICES: &[Vertex] = &[
     Vertex {
         position: [0.0, 0.5, 0.0],
         color: [1.0, 0.0, 0.0],
+        tex_coords: [0.5, 1.0],
     },
     Vertex {
         position: [-0.5, -0.5, 0.0],
         color: [0.0, 1.0, 0.0],
+        tex_coords: [0.0, 0.0],
     },
     Vertex {
         position: [0.5, -0.5, 0.0],
         color: [0.0, 0.0, 1.0],
+        tex_coords: [1.0, 0.0],
     },
 ];
 
@@ -62,6 +66,8 @@ struct State {
     camera: Camera,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
+    diffuse_bind_group: wgpu::BindGroup,
+    diffuse_texture: texture::Texture,
 
     // The window must be declared after the surface so
     // it gets dropped after it as the surface contains
@@ -135,6 +141,51 @@ impl State {
 
         surface.configure(&device, &config);
 
+        let diffuse_bytes = include_bytes!("../assets/texture.png");
+        let diffuse_texture =
+            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "../assets/texture.png")
+                .unwrap();
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view), // CHANGED!
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler), // CHANGED!
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
         let camera = Camera {
             eye: Point3::new(0.0, 1.0, 2.0),
             target: Point3::new(0.0, 0.0, 0.0),
@@ -178,7 +229,7 @@ impl State {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout],
+            bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -221,7 +272,7 @@ impl State {
 
         let meshes: Vec<Mesh> = vec![
             create_mesh(&device, VERTICES, INDICES), // triangle
-            create_mesh(&device, cube.vertices.as_slice(), cube.indices.as_slice()),
+                                                     //create_mesh(&device, cube.vertices.as_slice(), cube.indices.as_slice()),
         ];
 
         Self {
@@ -235,6 +286,8 @@ impl State {
             camera,
             uniform_buffer,
             uniform_bind_group,
+            diffuse_bind_group,
+            diffuse_texture,
             window,
         }
     }
@@ -310,6 +363,7 @@ impl State {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
 
             for mesh in self.meshes.iter() {
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));

@@ -16,6 +16,12 @@ log = "0.4.20"
 cfg-if = "1.0.0"
 bytemuck = { version = "1.14.0", features = [ "derive" ] }
 gltf = "1.4.0"
+anyhow = "1.0.79"
+
+[dependencies.image]
+version = "0.24.7"
+default-features = false
+features = ["png", "jpeg"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
@@ -28,3 +34,9 @@ web-sys = { version = "0.3", features = [
     "Window",
     "Element",
 ]}
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

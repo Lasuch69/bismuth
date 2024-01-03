@@ -21,6 +21,7 @@ pub fn load(path: &str) -> Result<MeshData, Error> {
                     vertices.push(Vertex {
                         position,
                         color: [1.0, 1.0, 1.0],
+                        tex_coords: [0.0, 0.0],
                     })
                 }
             }
