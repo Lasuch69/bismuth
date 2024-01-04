@@ -2,12 +2,7 @@ use gltf::Error;
 
 use crate::vertex::Vertex;
 
-pub struct MeshData {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-}
-
-pub fn load(path: &str) -> Result<MeshData, Error> {
+pub fn load(path: &str) -> Result<(Vec<Vertex>, Vec<u32>), Error> {
     let mut vertices: Vec<Vertex> = vec![];
     let mut indices: Vec<u32> = vec![];
 
@@ -48,5 +43,5 @@ pub fn load(path: &str) -> Result<MeshData, Error> {
         }
     }
 
-    Ok(MeshData { vertices, indices })
+    Ok((vertices, indices))
 }

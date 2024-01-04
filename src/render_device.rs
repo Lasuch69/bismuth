@@ -271,7 +271,7 @@ impl RenderDevice {
             multiview: None,
         });
 
-        let cube = load("assets/cube.gltf").expect("Failed to load cube!");
+        let (vertices, indices) = load("assets/cube.gltf").expect("Failed to load cube!");
 
         let instances = &vec![
             Instance {
@@ -290,17 +290,17 @@ impl RenderDevice {
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(cube.vertices.as_slice()),
+            contents: bytemuck::cast_slice(vertices.as_slice()),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(cube.indices.as_slice()),
+            contents: bytemuck::cast_slice(indices.as_slice()),
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let index_count = cube.indices.len() as u32;
+        let index_count = indices.len() as u32;
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
 
