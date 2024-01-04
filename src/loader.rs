@@ -1,6 +1,6 @@
-use gltf::{mesh::util::tex_coords, Error};
+use gltf::Error;
 
-use crate::vertex::{self, Vertex};
+use crate::vertex::Vertex;
 
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
@@ -38,17 +38,6 @@ pub fn load(path: &str) -> Result<MeshData, Error> {
                 }
 
                 vertices.push(vertex);
-            }
-            if let Some(iter) = reader.read_positions() {
-                let mut uv = reader.read_tex_coords(0).unwrap().into_f32();
-
-                for position in iter {
-                    vertices.push(Vertex {
-                        position,
-                        color: [1.0, 1.0, 1.0],
-                        tex_coords: uv.next().unwrap_or_default(),
-                    })
-                }
             }
 
             if let Some(iter) = reader.read_indices() {
