@@ -1,4 +1,10 @@
-use bismuth::{camera::Camera, render_device::RenderDevice};
+use std::sync::Arc;
+
+use bismuth::{
+    camera::Camera,
+    loader::load,
+    render_device::{Mesh, MeshInstance, RenderDevice},
+};
 
 use bevy_math::prelude::*;
 use winit::{
@@ -54,6 +60,13 @@ fn main() {
 
     let mut rd = pollster::block_on(RenderDevice::new(window));
 
+    let (vertices, indices) = load("assets/cube.gltf").expect("Failed to load cube!");
+
+    let mesh = Arc::new(Mesh::new(rd.get_device(), vertices, indices));
+    let mut cube = MeshInstance::new(rd.get_device(), mesh, Mat4::IDENTITY);
+
+    let mut y = 0.0;
+
     event_loop.run(move |event, _, control_flow| {
         match event {
             Event::WindowEvent {
@@ -86,7 +99,15 @@ fn main() {
             Event::RedrawRequested(window_id) if window_id == rd.get_window().id() => {
                 update();
 
-                match rd.render(&camera) {
+                let (scale, _, translation) = cube.transform.to_scale_rotation_translation();
+
+                y += 0.0001;
+                let rotation = Quat::from_euler(EulerRot::XYZ, 0.0, y, 0.0);
+
+                cube.transform =
+                    Mat4::from_scale_rotation_translation(scale, rotation, translation);
+
+                match rd.render(&camera, vec![&cube]) {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

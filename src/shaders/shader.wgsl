@@ -13,7 +13,7 @@ struct VertexInput {
 	@location(2) tex_coords: vec2<f32>
 }
 
-struct InstanceInput {
+struct ModelInput {
     @location(5) x: vec4<f32>,
     @location(6) y: vec4<f32>,
     @location(7) z: vec4<f32>,
@@ -27,8 +27,8 @@ struct VertexOutput {
 };
 
 @vertex
-fn vertex(v: VertexInput, i: InstanceInput) -> VertexOutput {
-    let model = mat4x4<f32>(i.x, i.y, i.z, i.w);
+fn vertex(v: VertexInput, m: ModelInput) -> VertexOutput {
+    let model = mat4x4<f32>(m.x, m.y, m.z, m.w);
 
     var out: VertexOutput;
     out.position = ubo.view_proj * model * vec4<f32>(v.position, 1.0);

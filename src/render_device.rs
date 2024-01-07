@@ -1,10 +1,63 @@
-use crate::{camera::Camera, loader::load, texture, vertex::Vertex};
+use crate::{camera::Camera, texture, vertex::Vertex};
 
 use bevy_math::prelude::*;
 use wgpu::{util::DeviceExt, CommandEncoder, RenderPass, SurfaceTexture, TextureView};
 use winit::window::Window;
 
-use std::{f32::consts::PI, iter};
+use std::{iter, sync::Arc};
+
+pub struct Mesh {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+}
+
+impl Mesh {
+    pub fn new(device: &wgpu::Device, vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(vertices.as_slice()),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(indices.as_slice()),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let index_count = indices.len() as u32;
+
+        Mesh {
+            vertex_buffer,
+            index_buffer,
+            index_count,
+        }
+    }
+}
+
+pub struct MeshInstance {
+    pub mesh: Arc<Mesh>,
+    pub transform: Mat4,
+
+    instance_buffer: wgpu::Buffer,
+}
+
+impl MeshInstance {
+    pub fn new(device: &wgpu::Device, mesh: Arc<Mesh>, transform: Mat4) -> Self {
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&vec![transform.to_cols_array_2d()]),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        MeshInstance {
+            mesh,
+            instance_buffer,
+            transform,
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -14,15 +67,15 @@ struct UniformBufferObject {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: [[f32; 4]; 4],
+struct Model {
+    data: [[f32; 4]; 4],
 }
 
-impl InstanceRaw {
+impl Model {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<Model>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -50,24 +103,6 @@ impl InstanceRaw {
     }
 }
 
-struct Instance {
-    position: Vec3,
-    rotation: Quat,
-}
-
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        InstanceRaw {
-            model: Mat4::from_scale_rotation_translation(
-                Vec3::new(1.0, 1.0, 1.0),
-                self.rotation,
-                self.position,
-            )
-            .to_cols_array_2d(),
-        }
-    }
-}
-
 pub struct RenderDevice {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -79,11 +114,6 @@ pub struct RenderDevice {
     uniform_bind_group: wgpu::BindGroup,
     diffuse_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    instance_buffer: wgpu::Buffer,
-    index_count: u32,
-    instance_count: u32,
 
     // Unsafe reference; Declared last to not be dropped before surface.
     window: Window,
@@ -236,7 +266,7 @@ impl RenderDevice {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vertex",
-                buffers: &[Vertex::desc(), InstanceRaw::desc()],
+                buffers: &[Vertex::desc(), Model::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -271,47 +301,6 @@ impl RenderDevice {
             multiview: None,
         });
 
-        let (vertices, indices) = load("assets/cube.gltf").expect("Failed to load cube!");
-
-        let instances = &vec![
-            Instance {
-                position: Vec3::ZERO,
-                rotation: Quat::from_rotation_y(PI / 4.0),
-            },
-            Instance {
-                position: Vec3::new(-0.5, 0.25, 0.0),
-                rotation: Quat::default(),
-            },
-            Instance {
-                position: Vec3::new(0.0, 0.35, -0.5),
-                rotation: Quat::default(),
-            },
-        ];
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(vertices.as_slice()),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(indices.as_slice()),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let index_count = indices.len() as u32;
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let instance_count = instances.len() as u32;
-
         Self {
             surface,
             device,
@@ -323,11 +312,6 @@ impl RenderDevice {
             uniform_bind_group,
             diffuse_bind_group,
             pipeline,
-            vertex_buffer,
-            index_buffer,
-            instance_buffer,
-            index_count,
-            instance_count,
             window,
         }
     }
@@ -404,7 +388,11 @@ impl RenderDevice {
         output.present();
     }
 
-    pub fn render(&mut self, camera: &Camera) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        camera: &Camera,
+        instances: Vec<&MeshInstance>,
+    ) -> Result<(), wgpu::SurfaceError> {
         self.update_uniform_buffer(camera);
 
         let (output, mut encoder) = self.begin_render()?;
@@ -418,11 +406,23 @@ impl RenderDevice {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
-        render_pass.draw_indexed(0..self.index_count, 0, 0..self.instance_count as _);
+        for instance in instances {
+            self.queue.write_buffer(
+                &instance.instance_buffer,
+                0,
+                bytemuck::cast_slice(&[instance.transform.to_cols_array_2d()]),
+            );
+
+            render_pass.set_vertex_buffer(0, instance.mesh.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, instance.instance_buffer.slice(..));
+            render_pass.set_index_buffer(
+                instance.mesh.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+
+            render_pass.draw_indexed(0..instance.mesh.index_count, 0, 0..1 as _);
+        }
 
         drop(render_pass);
 
@@ -441,5 +441,9 @@ impl RenderDevice {
             self.depth_texture =
                 texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
         }
+    }
+
+    pub fn get_device(&self) -> &wgpu::Device {
+        return &self.device;
     }
 }
