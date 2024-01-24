@@ -315,8 +315,11 @@ impl Renderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[ubo]));
     }
 
-    pub fn render(&mut self, camera: &Camera) -> Result<(), wgpu::SurfaceError> {
-        self.update_uniform_buffer(camera);
+    pub fn render(&mut self, camera: Option<&Camera>) -> Result<(), wgpu::SurfaceError> {
+        match camera {
+            Some(x) => self.update_uniform_buffer(x),
+            None => (),
+        }
 
         let output = self.surface.get_current_texture()?;
 

@@ -17,6 +17,7 @@ bytemuck = { version = "1.14.0", features = [ "derive" ] }
 gltf = "1.4.0"
 anyhow = "1.0.79"
 bevy_math = "0.12.1"
+bevy_ecs = "0.12.1"
 
 [dependencies.image]
 version = "0.24.7"

@@ -1,7 +1,9 @@
 use std::f32::consts::PI;
 
+use bevy_ecs::prelude::*;
 use bevy_math::prelude::*;
 
+#[derive(Resource)]
 pub struct Camera {
     pub eye: Vec3,
     pub target: Vec3,
