@@ -1,6 +1,6 @@
 use gltf::Error;
 
-use crate::vertex::Vertex;
+use crate::rendering::vertex::Vertex;
 
 pub fn load(path: &str) -> Result<(Vec<Vertex>, Vec<u32>), Error> {
     let mut vertices: Vec<Vertex> = vec![];

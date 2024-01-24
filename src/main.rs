@@ -1,10 +1,5 @@
-use std::sync::Arc;
-
-use bismuth::{
-    camera::Camera,
-    loader::load,
-    render_device::{Mesh, MeshInstance, RenderDevice},
-};
+use bismuth::loader::load;
+use bismuth::rendering::{camera::Camera, renderer::Renderer};
 
 use bevy_math::prelude::*;
 use winit::{
@@ -13,41 +8,11 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 fn main() {
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Couldn't initialize logger");
-        } else {
-            env_logger::init();
-        }
-    }
+    env_logger::init();
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        // Winit prevents sizing with CSS, so we have to set
-        // the size manually when on web.
-        use winit::dpi::PhysicalSize;
-        window.set_inner_size(PhysicalSize::new(450, 400));
-
-        use winit::platform::web::WindowExtWebSys;
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("wasm-example")?;
-                let canvas = web_sys::Element::from(window.canvas());
-                dst.append_child(&canvas).ok()?;
-                Some(())
-            })
-            .expect("Couldn't append canvas to document body.");
-    }
 
     let camera = Camera {
         eye: Vec3::new(1.0, 1.0, 1.0),
@@ -58,21 +23,17 @@ fn main() {
         zfar: 100.0,
     };
 
-    let mut rd = pollster::block_on(RenderDevice::new(window));
-
     let (vertices, indices) = load("assets/cube.gltf").expect("Failed to load cube!");
 
-    let mesh = Arc::new(Mesh::new(rd.get_device(), vertices, indices));
-    let mut cube = MeshInstance::new(rd.get_device(), mesh, Mat4::IDENTITY);
-
-    let mut y = 0.0;
+    let mut renderer = pollster::block_on(Renderer::new(window));
+    renderer.create_mesh(vertices, indices, &Mat4::IDENTITY);
 
     event_loop.run(move |event, _, control_flow| {
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == rd.get_window().id() => {
+            } if window_id == renderer.get_window().id() => {
                 if !input(event) {
                     match event {
                         WindowEvent::CloseRequested
@@ -86,32 +47,24 @@ fn main() {
                             ..
                         } => *control_flow = ControlFlow::Exit,
                         WindowEvent::Resized(physical_size) => {
-                            rd.resize_surface(*physical_size);
+                            renderer.resize_surface(*physical_size);
                         }
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                             // new_inner_size is &&mut so w have to dereference it twice
-                            rd.resize_surface(**new_inner_size);
+                            renderer.resize_surface(**new_inner_size);
                         }
                         _ => {}
                     }
                 }
             }
-            Event::RedrawRequested(window_id) if window_id == rd.get_window().id() => {
+            Event::RedrawRequested(window_id) if window_id == renderer.get_window().id() => {
                 update();
 
-                let (scale, _, translation) = cube.transform.to_scale_rotation_translation();
-
-                y += 0.0001;
-                let rotation = Quat::from_euler(EulerRot::XYZ, 0.0, y, 0.0);
-
-                cube.transform =
-                    Mat4::from_scale_rotation_translation(scale, rotation, translation);
-
-                match rd.render(&camera, vec![&cube]) {
+                match renderer.render(&camera) {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        rd.resize_surface(rd.get_size())
+                        renderer.resize_surface(renderer.get_size())
                     }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
@@ -122,7 +75,7 @@ fn main() {
             Event::RedrawEventsCleared => {
                 // RedrawRequested will only trigger once, unless we manually
                 // request it.
-                rd.get_window().request_redraw();
+                renderer.get_window().request_redraw();
             }
             _ => {}
         }
